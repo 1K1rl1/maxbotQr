@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node bot.js",
-    "start:insecure": "set NODE_TLS_REJECT_UNAUTHORIZED=0&& ..\\node-v24.21.0-win-x64\\node.exe bot.js",
-    "ocr:install": "py -3.12 -m pip install -r requirements-paddleocr.txt"
+    "start": "node new/bot.js",
+    "ocr:install": "py -3.12 -m pip install -r new/requirements-paddleocr.txt"
   },
   "dependencies": {
     "@maxhub/max-bot-api": "latest",
