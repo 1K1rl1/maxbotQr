@@ -23,7 +23,7 @@ const imageTempDirectory = path.join(os.tmpdir(), 'max-image-reader-bot');
 const trackedGeneratedMessages = new Map();
 
 function normalizeReactionValue(value) {
-    return String(value ? ? '')
+    return String(value ?? '')
         .normalize('NFKC')
         .replace(/[\u200D\uFE0F\s_-]+/g, '')
         .replace(/[^a-zA-ZА-Яа-я0-9]/g, '')
@@ -31,7 +31,7 @@ function normalizeReactionValue(value) {
 }
 
 function isDeleteReaction(value) {
-    const reaction = String(value ? ? '').trim();
+    const reaction = String(value ?? '').trim();
     if (!reaction) return false;
     const directReactionSet = new Set(['🗑', '🗑️', '❌', '🚫', '⛔']);
     if (directReactionSet.has(reaction)) return true;
@@ -46,7 +46,7 @@ function readMessageIdFromObject(value) {
     if (typeof value.id === 'number' || typeof value.id === 'string') return Number(value.id) || String(value.id);
     if (typeof value.mid === 'number' || typeof value.mid === 'string') return Number(value.mid) || String(value.mid);
     if (value.body && typeof value.body.mid !== 'undefined') return Number(value.body.mid) || String(value.body.mid);
-    if (value.message && typeof value.message.body ? .mid !== 'undefined') return Number(value.message.body.mid) || String(value.message.body.mid);
+    if (value.message && typeof value.message.body?.mid !== 'undefined') return Number(value.message.body.mid) || String(value.message.body.mid);
     return undefined;
 }
 
@@ -61,21 +61,21 @@ function readChatIdFromObject(value) {
 }
 
 function extractReactionInfo(update) {
-    const subject = update ? .reaction ? ? update ? .message_reaction ? ? update ? .reaction_data ? ? update ? .data ? .reaction ? ? null;
+    const subject = update?.reaction ?? update?.message_reaction ?? update?.reaction_data ?? update?.data?.reaction ?? null;
     const reactionValue = subject && typeof subject === 'object' ? subject : null;
 
-    const messageId = readMessageIdFromObject(update) ? ? readMessageIdFromObject(reactionValue) ? ? readMessageIdFromObject(update ? .message) ? ? null;
-    const chatId = readChatIdFromObject(update) ? ? readChatIdFromObject(reactionValue) ? ? readChatIdFromObject(update ? .message) ? ? null;
+    const messageId = readMessageIdFromObject(update) ?? readMessageIdFromObject(reactionValue) ?? readMessageIdFromObject(update?.message) ?? null;
+    const chatId = readChatIdFromObject(update) ?? readChatIdFromObject(reactionValue) ?? readChatIdFromObject(update?.message) ?? null;
 
     const rawEmoji =
-        reactionValue ? .emoji ? ?
-        reactionValue ? .type ? ?
-        reactionValue ? .value ? ?
-        reactionValue ? .name ? ?
-        update ? .emoji ? ?
-        update ? .reaction ? ?
-        update ? .reaction_emoji ? ?
-        update ? .reaction_type ? ?
+        reactionValue?.emoji ??
+        reactionValue?.type ??
+        reactionValue?.value ??
+        reactionValue?.name ??
+        update?.emoji ??
+        update?.reaction ??
+        update?.reaction_emoji ??
+        update?.reaction_type ??
         null;
 
     return {
@@ -86,8 +86,8 @@ function extractReactionInfo(update) {
 }
 
 function trackGeneratedMessage(ctx, messageLike) {
-    const chatId = ctx ? .chatId ? ? readChatIdFromObject(ctx ? .update) ? ? readChatIdFromObject(ctx ? .message);
-    const messageId = readMessageIdFromObject(messageLike) ? ? readMessageIdFromObject(ctx ? .message) ? ? ctx ? .messageId;
+    const chatId = ctx?.chatId ?? readChatIdFromObject(ctx?.update) ?? readChatIdFromObject(ctx?.message);
+    const messageId = readMessageIdFromObject(messageLike) ?? readMessageIdFromObject(ctx?.message) ?? ctx?.messageId;
     if (!chatId || !messageId) return;
     trackedGeneratedMessages.set(`${chatId}:${messageId}`, { chatId, messageId });
 }
@@ -463,7 +463,7 @@ bot.on('message_created', async(ctx) => {
     }
 });
 
-bot.on((update) => /reaction/i.test(String(update ? .update_type || '')), async(ctx) => {
+bot.on((update) => /reaction/i.test(String(update?.update_type || '')), async(ctx) => {
     const reactionInfo = extractReactionInfo(ctx.update);
     if (!reactionInfo.messageId || !reactionInfo.chatId) return;
     if (!isDeleteReaction(reactionInfo.reaction)) return;

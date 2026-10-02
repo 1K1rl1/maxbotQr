@@ -46,7 +46,7 @@ function readChatId(value) {
 }
 
 function normalizeDeleteReaction(value) {
-    const raw = String(value ? ? '').trim();
+    const raw = String(value ?? '').trim();
     if (!raw) return false;
     const direct = new Set(['🗑', '🗑️', '❌', '🚫', '⛔']);
     if (direct.has(raw)) return true;
@@ -59,38 +59,38 @@ function normalizeDeleteReaction(value) {
 }
 
 function extractReactionInfo(update) {
-    const payload = update ? .reaction ? ? update ? .message_reaction ? ? update ? .reaction_data ? ? null;
+    const payload = update?.reaction ?? update?.message_reaction ?? update?.reaction_data ?? null;
     const reactionValue = payload && typeof payload === 'object' ? payload : null;
 
-    const messageId = readMessageId(update ? .message_id) ?
-        ? readMessageId(update ? .message ? .body ? .mid) ?
-        ? readMessageId(update ? .message ? .mid) ?
-        ? readMessageId(reactionValue ? .message_id) ?
-        ? null;
+    const messageId = readMessageId(update?.message_id)
+        ?? readMessageId(update?.message?.body?.mid)
+        ?? readMessageId(update?.message?.mid)
+        ?? readMessageId(reactionValue?.message_id)
+        ?? null;
 
-    const chatId = readChatId(update ? .chat_id) ?
-        ? readChatId(update ? .message ? .recipient ? .chat_id) ?
-        ? readChatId(reactionValue ? .chat_id) ?
-        ? null;
+    const chatId = readChatId(update?.chat_id)
+        ?? readChatId(update?.message?.recipient?.chat_id)
+        ?? readChatId(reactionValue?.chat_id)
+        ?? null;
 
-    const reactionText = reactionValue ? .emoji ?
-        ? reactionValue ? .type ?
-        ? reactionValue ? .value ?
-        ? reactionValue ? .name ?
-        ? update ? .emoji ?
-        ? update ? .reaction ?
-        ? null;
+    const reactionText = reactionValue?.emoji
+        ?? reactionValue?.type
+        ?? reactionValue?.value
+        ?? reactionValue?.name
+        ?? update?.emoji
+        ?? update?.reaction
+        ?? null;
 
     return { messageId, chatId, reactionText };
 }
 
 function trackGeneratedMessage(ctx, generatedMessage) {
-    const chatId = readChatId(ctx ? .chatId) ? ? readChatId(ctx ? .update ? .chat_id) ? ? readChatId(ctx ? .message ? .recipient ? .chat_id);
-    const messageId = readMessageId(generatedMessage ? .message_id) ?
-        ? readMessageId(generatedMessage ? .id) ?
-        ? readMessageId(generatedMessage ? .mid) ?
-        ? readMessageId(generatedMessage ? .body ? .mid) ?
-        ? readMessageId(ctx ? .messageId);
+    const chatId = readChatId(ctx?.chatId) ?? readChatId(ctx?.update?.chat_id) ?? readChatId(ctx?.message?.recipient?.chat_id);
+    const messageId = readMessageId(generatedMessage?.message_id)
+        ?? readMessageId(generatedMessage?.id)
+        ?? readMessageId(generatedMessage?.mid)
+        ?? readMessageId(generatedMessage?.body?.mid)
+        ?? readMessageId(ctx?.messageId);
 
     if (!chatId || !messageId) return;
     generatedCodeMessages.set(`${chatId}:${messageId}`, { chatId, messageId });
