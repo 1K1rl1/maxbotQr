@@ -1,22 +1,13 @@
 import 'dotenv/config';
-import { mkdir } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Bot } from '@maxhub/max-bot-api';
 import bwipjs from 'bwip-js';
 import QRCode from 'qrcode';
-import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error('Не задан BOT_TOKEN в файле .env');
 
 const bot = new Bot(token);
 const generatedCodeMessages = new Map();
-const appDirectory = path.dirname(fileURLToPath(import.meta.url));
-const ocrCacheDirectory = path.join(os.tmpdir(), 'max-screenshot-ocr-cache');
-let ocrWorkerPromise;
 
 function readMessageId(value) {
     if (value == null) return null;
@@ -98,86 +89,22 @@ function parseCommand(text) {
     return { name: match[1].toLowerCase(), argument: match[2] || '' };
 }
 
-function normalizeCodeToken(value, fromOcr = false) {
-    const token = String(value || '')
+function normalizeCodeToken(value) {
+    return String(value || '')
         .replace(/[\s\-_]+/g, '')
         .toLowerCase();
-    if (!fromOcr) return token;
-
-    const confusedPrefix = token.match(/^(11|1i|i1|il|li|ll)(?=\d)/);
-    if (!confusedPrefix) return token;
-
-    const digits = token.slice(2);
-    if (confusedPrefix[1] === '11' && /^\d{4}$/.test(digits)) return `ii1${digits}`;
-    return `ii${digits}`;
 }
 
-function extractIdentifiers(text, fromOcr = false) {
+function extractIdentifiers(text) {
     const identifiers = new Set();
-    const patterns = [/(?:^|[^a-z0-9%])((?:%301%[a-z0-9._%-]+|(?:bx|cl|ii|us)[\s-]*[a-z0-9][a-z0-9._%-]{2,}))(?![a-z0-9%])/gi];
-    if (fromOcr) patterns.push(/(?:^|[^a-z0-9%])((?:11|1i|i1|il|li|ll)[\s-]*\d[a-z0-9._%-]{2,})(?![a-z0-9%])/gi);
+    const pattern = /(?:^|[^a-z0-9%])((?:%301%[a-z0-9._%-]+|(?:bx|cl|ii|us)[\s-]*[a-z0-9][a-z0-9._%-]{2,}))(?![a-z0-9%])/gi;
 
-    for (const pattern of patterns) {
-        for (const match of String(text || '').matchAll(pattern)) {
-            const token = normalizeCodeToken(match[1], fromOcr);
-            if (token) identifiers.add(token);
-        }
+    for (const match of String(text || '').matchAll(pattern)) {
+        const token = normalizeCodeToken(match[1]);
+        if (token) identifiers.add(token);
     }
 
     return [...identifiers];
-}
-
-function findImageUrl(value) {
-    if (!value || typeof value !== 'object') return null;
-    if (typeof value.url === 'string' && /^https?:\/\//i.test(value.url)) return value.url;
-    for (const child of Object.values(value)) {
-        const result = findImageUrl(child);
-        if (result) return result;
-    }
-    return null;
-}
-
-function findImageUrls(attachments) {
-    if (!Array.isArray(attachments)) return [];
-    return [...new Set(attachments
-        .filter((attachment) => attachment && ['image', 'photo'].includes(attachment.type))
-        .map(findImageUrl)
-        .filter(Boolean))];
-}
-
-async function getOcrWorker() {
-    if (!ocrWorkerPromise) {
-        ocrWorkerPromise = (async() => {
-            await mkdir(ocrCacheDirectory, { recursive: true });
-            return createWorker(['eng', 'rus'], 1, {
-                cachePath: ocrCacheDirectory,
-            });
-        })();
-    }
-
-    try {
-        return await ocrWorkerPromise;
-    } catch (error) {
-        ocrWorkerPromise = null;
-        throw error;
-    }
-}
-
-async function recognizeImage(imageUrl) {
-    const response = await fetch(imageUrl);
-    if (!response.ok) throw new Error(`Image download failed: ${response.status}`);
-
-    const imageBuffer = Buffer.from(await response.arrayBuffer());
-    const preparedImage = await sharp(imageBuffer)
-        .rotate()
-        .resize({ width: 2400, withoutEnlargement: false })
-        .grayscale()
-        .normalize()
-        .png()
-        .toBuffer();
-    const worker = await getOcrWorker();
-    const { data } = await worker.recognize(preparedImage);
-    return String(data.text || '').trim();
 }
 
 async function generateQr(value) {
@@ -232,40 +159,6 @@ async function replyWithQr(ctx, text) {
     await replyWithQrs(ctx, [value], 'QR-код для переданного текста.');
 }
 
-async function replyWithText(ctx, text) {
-    const value = String(text || '').trim();
-    if (!value) {
-        await ctx.reply('На изображении не удалось распознать текст.');
-        return;
-    }
-
-    for (let offset = 0; offset < value.length; offset += 3500) {
-        await ctx.reply(value.slice(offset, offset + 3500));
-    }
-}
-
-async function processImage(ctx, imageUrl, fallbackText = '') {
-    const recognizedText = await recognizeImage(imageUrl);
-    const identifiers = [...new Set([
-        ...extractIdentifiers(recognizedText, true),
-        ...extractIdentifiers(fallbackText),
-    ])];
-    const outputText = recognizedText || 'На изображении не удалось распознать текст.';
-
-    if (!identifiers.length) {
-        await replyWithText(ctx, outputText);
-        return;
-    }
-
-    if (outputText.length <= 2400) {
-        await replyWithQrs(ctx, identifiers, `Распознанный текст:\n${outputText}\n\nQR для: ${identifiers.join(', ')}`);
-        return;
-    }
-
-    await replyWithText(ctx, outputText);
-    await replyWithQrs(ctx, identifiers, `QR для распознанных кодов: ${identifiers.join(', ')}`);
-}
-
 async function replyWithBarcode(ctx, text) {
     const value = String(text || '').replace(/\s+/g, ' ').trim();
     if (!value) {
@@ -290,8 +183,8 @@ async function replyWithBarcode(ctx, text) {
 }
 
 const helpText = [
-    'Пришлите скриншот: бот вернёт распознанный текст и создаст QR для кодов bx, cl, ii, us и %301%.',
-    'Команды: /read, /qr <текст> и /barcode <текст>.',
+    'Коды bx, cl, ii, us и %301% автоматически создают QR.',
+    'Команды: /qr <текст> и /barcode <текст>.',
 ].join('\n');
 
 function redactErrorText(value) {
@@ -312,14 +205,7 @@ function reportError(scope, error) {
 }
 
 function getUserErrorMessage(error) {
-    const message = error && typeof error === 'object' ? String(error.message || '') : String(error || '');
-    if (message.includes('Image download failed')) {
-        return 'Не удалось загрузить изображение из MAX. Отправьте его ещё раз.';
-    }
-    if (/unsupported image format|Input buffer contains/i.test(message)) {
-        return 'Формат изображения не поддерживается. Отправьте PNG, JPG или WEBP.';
-    }
-    return 'Не удалось распознать текст или создать код. Попробуйте ещё раз.';
+    return 'Не удалось создать код. Проверьте текст и попробуйте ещё раз.';
 }
 
 async function replySafely(ctx, text) {
@@ -333,30 +219,11 @@ async function replySafely(ctx, text) {
 
 bot.on('message_created', async(ctx) => {
     try {
-        const messageBody = ctx.message?.body || {};
-        const userText = String(messageBody.text || '').trim();
+        const userText = String(ctx.message?.body?.text || '').trim();
         const command = parseCommand(userText);
-        const imageUrls = findImageUrls(messageBody.attachments);
 
         if (command && (command.name === 'start' || command.name === 'help')) {
             await ctx.reply(helpText);
-            return;
-        }
-
-        if (imageUrls.length) {
-            for (const [index, imageUrl] of imageUrls.entries()) {
-                try {
-                    await processImage(ctx, imageUrl, command?.argument || '');
-                } catch (error) {
-                    reportError(`image-processing-${index + 1}`, error);
-                    await replySafely(ctx, getUserErrorMessage(error));
-                }
-            }
-            return;
-        }
-
-        if (command?.name === 'read') {
-            await ctx.reply('Отправьте скриншот, и я верну распознанный текст.');
             return;
         }
 
@@ -416,15 +283,6 @@ bot.catch(async(error, ctx) => {
 async function shutdown(signal) {
     console.log(`Stopping bot (${signal})`);
     bot.stopPolling();
-    if (ocrWorkerPromise) {
-        try {
-            const worker = await ocrWorkerPromise;
-            await worker.terminate();
-            ocrWorkerPromise = null;
-        } catch (error) {
-            reportError('ocr-worker-shutdown', error);
-        }
-    }
 }
 
 process.once('SIGINT', () => { void shutdown('SIGINT'); });
@@ -441,7 +299,6 @@ process.once('uncaughtException', (error) => {
 bot.api.setMyCommands([
     { name: 'start', description: 'Информация о боте' },
     { name: 'help', description: 'Список команд' },
-    { name: 'read', description: 'Распознать текст на скриншоте' },
     { name: 'qr', description: 'Создать QR-код из текста' },
     { name: 'barcode', description: 'Создать штрихкод Code128' },
 ]).catch((error) => reportError('command-registration', error));
