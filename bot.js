@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { Bot } from '@maxhub/max-bot-api';
 import bwipjs from 'bwip-js';
+import QRCode from 'qrcode';
 
 const token = process.env.BOT_TOKEN;
 if (!token) throw new Error('Не задан BOT_TOKEN в файле .env');
@@ -88,6 +89,34 @@ function parseCommand(text) {
     return { name: match[1].toLowerCase(), argument: match[2] || '' };
 }
 
+function normalizeCodeToken(value) {
+    return String(value || '')
+        .replace(/[\s\-_]+/g, '')
+        .toLowerCase();
+}
+
+function extractIdentifiers(text) {
+    const identifiers = new Set();
+    const pattern = /(?:^|[^a-z0-9%])((?:%301%[a-z0-9._%-]+|(?:bx|cl|ii|us)[\s-]*[a-z0-9][a-z0-9._%-]{2,}))(?![a-z0-9%])/gi;
+
+    for (const match of String(text || '').matchAll(pattern)) {
+        const token = normalizeCodeToken(match[1]);
+        if (token) identifiers.add(token);
+    }
+
+    return [...identifiers];
+}
+
+async function generateQr(value) {
+    return QRCode.toBuffer(value, {
+        type: 'png',
+        width: 600,
+        margin: 3,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#111111', light: '#FFFFFF' },
+    });
+}
+
 async function generateBarcode(value) {
     return bwipjs.toBuffer({
         bcid: 'code128',
@@ -99,6 +128,35 @@ async function generateBarcode(value) {
         padding: 18,
         backgroundcolor: 'FFFFFF',
     });
+}
+
+async function replyWithQrs(ctx, values, replyText) {
+    const uniqueValues = [...new Set(values)].slice(0, 10);
+    const attachments = [];
+
+    for (const value of uniqueValues) {
+        const image = await generateQr(value);
+        const attachment = await bot.api.uploadImage({ source: image });
+        attachments.push(attachment.toJson());
+    }
+
+    if (!attachments.length) return;
+    const response = await ctx.reply(replyText, { attachments });
+    trackGeneratedMessage(ctx, response);
+}
+
+async function replyWithQr(ctx, text) {
+    const value = String(text || '').trim();
+    if (!value) {
+        await ctx.reply('Укажите текст после команды. Например: /qr bx838833');
+        return;
+    }
+    if (value.length > 1500) {
+        await ctx.reply('Текст слишком длинный для QR-кода. Максимум: 1500 символов.');
+        return;
+    }
+
+    await replyWithQrs(ctx, [value], 'QR-код для переданного текста.');
 }
 
 async function replyWithBarcode(ctx, text) {
@@ -125,8 +183,8 @@ async function replyWithBarcode(ctx, text) {
 }
 
 const helpText = [
-    'Генератор штрихкодов Code128.',
-    'Команда: /barcode <текст>.',
+    'Коды bx, cl, ii, us и %301% автоматически создают QR.',
+    'Команды: /qr <текст> и /barcode <текст>.',
 ].join('\n');
 
 function redactErrorText(value) {
@@ -147,7 +205,7 @@ function reportError(scope, error) {
 }
 
 function getUserErrorMessage(error) {
-    return 'Не удалось создать штрихкод. Проверьте текст и попробуйте ещё раз.';
+    return 'Не удалось создать код. Проверьте текст и попробуйте ещё раз.';
 }
 
 async function replySafely(ctx, text) {
@@ -164,17 +222,33 @@ bot.on('message_created', async(ctx) => {
         const userText = String(ctx.message?.body?.text || '').trim();
         const command = parseCommand(userText);
 
-        if (!command || command.name === 'start' || command.name === 'help') {
+        if (command && (command.name === 'start' || command.name === 'help')) {
             await ctx.reply(helpText);
             return;
         }
 
-        if (command.name !== 'barcode') {
-            await ctx.reply('Команда не распознана. Используйте /barcode <текст>.');
+        if (command?.name === 'qr') {
+            await replyWithQr(ctx, command.argument);
             return;
         }
 
-        await replyWithBarcode(ctx, command.argument);
+        if (command?.name === 'barcode') {
+            await replyWithBarcode(ctx, command.argument);
+            return;
+        }
+
+        if (command) {
+            await ctx.reply('Команда не распознана. Напишите /help.');
+            return;
+        }
+
+        const identifiers = extractIdentifiers(userText);
+        if (identifiers.length) {
+            await replyWithQrs(ctx, identifiers, `Найдены коды: ${identifiers.join(', ')}`);
+            return;
+        }
+
+        await ctx.reply(helpText);
     } catch (error) {
         reportError('message-processing', error);
         await replySafely(ctx, getUserErrorMessage(error));
@@ -225,6 +299,7 @@ process.once('uncaughtException', (error) => {
 bot.api.setMyCommands([
     { name: 'start', description: 'Информация о боте' },
     { name: 'help', description: 'Список команд' },
+    { name: 'qr', description: 'Создать QR-код из текста' },
     { name: 'barcode', description: 'Создать штрихкод Code128' },
 ]).catch((error) => reportError('command-registration', error));
 

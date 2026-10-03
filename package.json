@@ -9,6 +9,7 @@
     "dependencies": {
         "@maxhub/max-bot-api": "latest",
         "bwip-js": "^4.11.4",
-        "dotenv": "latest"
+        "dotenv": "latest",
+        "qrcode": "^1.5.4"
     }
 }
