@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const appDirectory = path.dirname(fileURLToPath(import.meta.url));
+const appDirectory = path.dirname(fileURLToPath(
+    import.meta.url));
 const certificatePath = path.join(appDirectory, 'russian-trusted-root-ca.pem');
 const botProcess = spawn(process.execPath, [path.join(appDirectory, 'bot.js')], {
     env: {

@@ -1,17 +1,14 @@
 {
-    "name": "max-image-reader-bot",
+    "name": "max-barcode-bot",
     "version": "1.0.0",
     "private": true,
     "type": "module",
     "scripts": {
-        "start": "node start.mjs",
-        "ocr:install": "py -3.12 -m pip install -r requirements-paddleocr.txt"
+        "start": "node start.mjs"
     },
     "dependencies": {
         "@maxhub/max-bot-api": "latest",
         "bwip-js": "^4.11.4",
-        "dotenv": "latest",
-        "qrcode": "^1.5.4",
-        "sharp": "latest"
+        "dotenv": "latest"
     }
 }
