@@ -10,6 +10,8 @@
         "@maxhub/max-bot-api": "latest",
         "bwip-js": "^4.11.4",
         "dotenv": "latest",
-        "qrcode": "^1.5.4"
+        "qrcode": "^1.5.4",
+        "sharp": "^0.35.5",
+        "tesseract.js": "^6.0.1"
     }
 }
