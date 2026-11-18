@@ -298,7 +298,7 @@ async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdenti
 }
 
 const helpText = [
-    'Отправьте фото, чтобы получить распознанный текст.',
+    'Отправьте фото с кодом или используйте /read для распознавания текста.',
     'Сообщения с кодами bx, cl, ii, us и %301% автоматически создают штрихкод Code128 и удаляются после обработки.',
     'Команды: /read, /qr <текст> и /barcode <текст>.',
 ].join('\n');
