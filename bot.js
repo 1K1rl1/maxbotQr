@@ -216,7 +216,7 @@ async function replyWithQr(ctx, text) {
         return;
     }
 
-    await replyWithQrs(ctx, [value], 'QR-код для переданного текста.');
+    await replyWithQrs(ctx, [value], value);
 }
 
 async function replyWithText(ctx, text) {
@@ -248,25 +248,25 @@ async function replyWithBarcode(ctx, text) {
 
     const image = await generateBarcode(value);
     const attachment = await bot.api.uploadImage({ source: image });
-    const response = await ctx.reply(`Штрихкод Code128 для текста: ${value}`, {
+    const response = await ctx.reply(value, {
         attachments: [attachment.toJson()],
     });
     trackGeneratedMessage(ctx, response);
 }
 
-async function replyWithIdentifierBarcodes(ctx, identifiers, caption) {
-    const values = [...new Set(identifiers)].slice(0, 10);
-    const attachments = [];
-
-    for (const value of values) {
-        const image = await generateBarcode(value);
-        const attachment = await bot.api.uploadImage({ source: image });
-        attachments.push(attachment.toJson());
+async function replyWithIdentifierQr(ctx, text) {
+    const value = String(text || '').trim();
+    if (!value) return false;
+    if (value.length > 1500) {
+        await ctx.reply('Текст слишком длинный для QR-кода. Максимум: 1500 символов.');
+        return false;
     }
 
-    if (!attachments.length) return;
-    const response = await ctx.reply(caption, { attachments });
+    const image = await generateQr(value);
+    const attachment = await bot.api.uploadImage({ source: image });
+    const response = await ctx.reply(value, { attachments: [attachment.toJson()] });
     trackGeneratedMessage(ctx, response);
+    return true;
 }
 
 async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdentifier = false) {
@@ -276,8 +276,7 @@ async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdenti
         recognizedText = await recognizeImage(imageUrl);
     } catch (error) {
         if (!fallbackIdentifiers.length) throw error;
-        await replyWithIdentifierBarcodes(ctx, fallbackIdentifiers, fallbackText);
-        return true;
+        return replyWithIdentifierQr(ctx, fallbackText);
     }
 
     const outputText = [fallbackText, recognizedText].filter(Boolean).join('\n');
@@ -287,8 +286,7 @@ async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdenti
     ])];
 
     if (identifiers.length) {
-        await replyWithIdentifierBarcodes(ctx, identifiers, outputText);
-        return true;
+        return replyWithIdentifierQr(ctx, outputText);
     }
 
     if (replyWithoutIdentifier) {
@@ -299,7 +297,7 @@ async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdenti
 
 const helpText = [
     'Отправьте фото с кодом или используйте /read для распознавания текста.',
-    'Сообщения с кодами bx, cl, ii, us и %301% автоматически создают штрихкод Code128 и удаляются после обработки.',
+    'Сообщения с кодами bx, cl, ii, us и %301% автоматически создают QR с текстом сообщения и удаляются после обработки.',
     'Команды: /read, /qr <текст> и /barcode <текст>.',
 ].join('\n');
 
@@ -359,7 +357,7 @@ bot.on('message_created', async(ctx) => {
                     foundIdentifier = await processImage(
                         ctx,
                         imageUrl,
-                        userText,
+                        command ? command.argument : userText,
                         Boolean(command && command.name === 'read'),
                     ) || foundIdentifier;
                 } catch (error) {
@@ -398,7 +396,8 @@ bot.on('message_created', async(ctx) => {
 
         const identifiers = extractIdentifiers(userText);
         if (identifiers.length) {
-            await replyWithIdentifierBarcodes(ctx, identifiers, userText);
+            const codeSent = await replyWithIdentifierQr(ctx, userText);
+            if (!codeSent) return;
             try {
                 await ctx.deleteMessage();
             } catch (error) {
