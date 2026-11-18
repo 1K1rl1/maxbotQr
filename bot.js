@@ -231,11 +231,6 @@ async function replyWithText(ctx, text) {
     }
 }
 
-async function processImage(ctx, imageUrl) {
-    const recognizedText = await recognizeImage(imageUrl);
-    await replyWithText(ctx, recognizedText);
-}
-
 async function replyWithBarcode(ctx, text) {
     const value = String(text || '').replace(/\s+/g, ' ').trim();
     if (!value) {
@@ -259,9 +254,52 @@ async function replyWithBarcode(ctx, text) {
     trackGeneratedMessage(ctx, response);
 }
 
+async function replyWithIdentifierBarcodes(ctx, identifiers, caption) {
+    const values = [...new Set(identifiers)].slice(0, 10);
+    const attachments = [];
+
+    for (const value of values) {
+        const image = await generateBarcode(value);
+        const attachment = await bot.api.uploadImage({ source: image });
+        attachments.push(attachment.toJson());
+    }
+
+    if (!attachments.length) return;
+    const response = await ctx.reply(caption, { attachments });
+    trackGeneratedMessage(ctx, response);
+}
+
+async function processImage(ctx, imageUrl, fallbackText = '', replyWithoutIdentifier = false) {
+    const fallbackIdentifiers = extractIdentifiers(fallbackText);
+    let recognizedText;
+    try {
+        recognizedText = await recognizeImage(imageUrl);
+    } catch (error) {
+        if (!fallbackIdentifiers.length) throw error;
+        await replyWithIdentifierBarcodes(ctx, fallbackIdentifiers, fallbackText);
+        return true;
+    }
+
+    const outputText = [fallbackText, recognizedText].filter(Boolean).join('\n');
+    const identifiers = [...new Set([
+        ...extractIdentifiers(recognizedText),
+        ...fallbackIdentifiers,
+    ])];
+
+    if (identifiers.length) {
+        await replyWithIdentifierBarcodes(ctx, identifiers, outputText);
+        return true;
+    }
+
+    if (replyWithoutIdentifier) {
+        await replyWithText(ctx, recognizedText);
+    }
+    return false;
+}
+
 const helpText = [
     'Отправьте фото, чтобы получить распознанный текст.',
-    'Текстовые коды bx, cl, ii, us и %301% автоматически создают QR.',
+    'Сообщения с кодами bx, cl, ii, us и %301% автоматически создают штрихкод Code128 и удаляются после обработки.',
     'Команды: /read, /qr <текст> и /barcode <текст>.',
 ].join('\n');
 
@@ -315,12 +353,27 @@ bot.on('message_created', async(ctx) => {
         }
 
         if (imageUrls.length) {
+            let foundIdentifier = false;
             for (const [index, imageUrl] of imageUrls.entries()) {
                 try {
-                    await processImage(ctx, imageUrl);
+                    foundIdentifier = await processImage(
+                        ctx,
+                        imageUrl,
+                        userText,
+                        Boolean(command && command.name === 'read'),
+                    ) || foundIdentifier;
                 } catch (error) {
                     reportError(`image-processing-${index + 1}`, error);
-                    await replySafely(ctx, getUserErrorMessage(error));
+                    if (command?.name === 'read') {
+                        await replySafely(ctx, getUserErrorMessage(error));
+                    }
+                }
+            }
+            if (foundIdentifier) {
+                try {
+                    await ctx.deleteMessage();
+                } catch (error) {
+                    reportError('source-message-delete', error);
                 }
             }
             return;
@@ -341,18 +394,18 @@ bot.on('message_created', async(ctx) => {
             return;
         }
 
-        if (command) {
-            await ctx.reply('Команда не распознана. Напишите /help.');
-            return;
-        }
+        if (command) return;
 
         const identifiers = extractIdentifiers(userText);
         if (identifiers.length) {
-            await replyWithQrs(ctx, identifiers, `Найдены коды: ${identifiers.join(', ')}`);
+            await replyWithIdentifierBarcodes(ctx, identifiers, userText);
+            try {
+                await ctx.deleteMessage();
+            } catch (error) {
+                reportError('source-message-delete', error);
+            }
             return;
         }
-
-        await ctx.reply(helpText);
     } catch (error) {
         reportError('message-processing', error);
         await replySafely(ctx, getUserErrorMessage(error));
